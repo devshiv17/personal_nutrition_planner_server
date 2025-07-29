@@ -1,0 +1,28 @@
+includes:
+    - vendor/larastan/larastan/extension.neon
+
+parameters:
+    paths:
+        - app/
+        - database/
+        - routes/
+        - tests/
+
+    # Rule level (0-9, where 9 is the strictest)
+    level: 6
+
+    ignoreErrors:
+        # Ignore common Laravel patterns that PHPStan might flag
+        - '#Call to method PHPUnit\\Framework\\Assert::assertTrue\(\) with true will always evaluate to true#'
+        
+    excludePaths:
+        - database/migrations/*
+        - bootstrap/cache/*
+        - storage/*
+        - vendor/*
+
+    # Laravel specific configuration
+    parallel:
+        jobSize: 20
+        maximumNumberOfProcesses: 32
+        minimumNumberOfJobsPerProcess: 2
