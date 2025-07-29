@@ -6,11 +6,12 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasFactory, Notifiable;
+    use HasFactory, Notifiable, HasApiTokens;
 
     /**
      * The attributes that are mass assignable.
@@ -18,9 +19,23 @@ class User extends Authenticatable
      * @var list<string>
      */
     protected $fillable = [
-        'name',
         'email',
-        'password',
+        'password_hash',
+        'first_name',
+        'last_name',
+        'date_of_birth',
+        'gender',
+        'height_cm',
+        'current_weight_kg',
+        'target_weight_kg',
+        'activity_level',
+        'primary_goal',
+        'target_timeline_weeks',
+        'dietary_preference',
+        'timezone',
+        'locale',
+        'email_notifications',
+        'push_notifications',
     ];
 
     /**
@@ -29,7 +44,7 @@ class User extends Authenticatable
      * @var list<string>
      */
     protected $hidden = [
-        'password',
+        'password_hash',
         'remember_token',
     ];
 
@@ -42,7 +57,21 @@ class User extends Authenticatable
     {
         return [
             'email_verified_at' => 'datetime',
-            'password' => 'hashed',
+            'password_hash' => 'hashed',
+            'date_of_birth' => 'date',
+            'height_cm' => 'decimal:2',
+            'current_weight_kg' => 'decimal:2',
+            'target_weight_kg' => 'decimal:2',
+            'bmr_calories' => 'decimal:2',
+            'tdee_calories' => 'decimal:2',
+            'is_active' => 'boolean',
+            'email_notifications' => 'boolean',
+            'push_notifications' => 'boolean',
+            'profile_completed' => 'boolean',
+            'last_login_at' => 'datetime',
+            'created_at' => 'datetime',
+            'updated_at' => 'datetime',
+            'deleted_at' => 'datetime',
         ];
     }
 }
