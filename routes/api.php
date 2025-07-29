@@ -3,28 +3,41 @@
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/user', function (Request $request) {
-    return $request->user();
-})->middleware('auth:sanctum');
+// Health check endpoint (no rate limiting)
+Route::get('/health', function () {
+    return response()->json([
+        'status' => 'healthy',
+        'timestamp' => now()->toISOString(),
+        'version' => '1.0.0'
+    ]);
+});
 
-// Authentication routes
-Route::prefix('auth')->group(function () {
+// Authentication routes with rate limiting
+Route::prefix('auth')->middleware(['api.throttle:10,1'])->group(function () {
     Route::post('/register', [App\Http\Controllers\Api\AuthController::class, 'register']);
     Route::post('/login', [App\Http\Controllers\Api\AuthController::class, 'login']);
-    Route::post('/logout', [App\Http\Controllers\Api\AuthController::class, 'logout'])->middleware('auth:sanctum');
+    Route::post('/logout', [App\Http\Controllers\Api\AuthController::class, 'logout'])->middleware('api.auth');
     Route::post('/password/reset', [App\Http\Controllers\Api\AuthController::class, 'resetPassword']);
 });
 
-// Public food routes
-Route::prefix('foods')->group(function () {
+// Public food routes with moderate rate limiting
+Route::prefix('foods')->middleware(['api.throttle:100,1'])->group(function () {
     Route::get('/search', [App\Http\Controllers\Api\FoodController::class, 'search']);
     Route::get('/popular', [App\Http\Controllers\Api\FoodController::class, 'popular']);
     Route::get('/categories', [App\Http\Controllers\Api\FoodController::class, 'categories']);
     Route::get('/{id}', [App\Http\Controllers\Api\FoodController::class, 'show']);
 });
 
-// Protected API routes
-Route::middleware('auth:sanctum')->group(function () {
+// Protected API routes with authentication and rate limiting
+Route::middleware(['api.auth', 'api.throttle:200,1'])->group(function () {
+    
+    // User info route
+    Route::get('/user', function (Request $request) {
+        return response()->json([
+            'success' => true,
+            'data' => $request->user()->makeHidden(['password_hash'])
+        ]);
+    });
     
     // User management
     Route::prefix('user')->group(function () {
@@ -54,8 +67,13 @@ Route::middleware('auth:sanctum')->group(function () {
     // Test route for authenticated users
     Route::get('/test', function (Request $request) {
         return response()->json([
-            'message' => 'Sanctum authentication is working!',
-            'user' => $request->user()->only(['id', 'first_name', 'last_name', 'email'])
+            'success' => true,
+            'message' => 'API middleware is working!',
+            'data' => [
+                'user' => $request->user()->only(['id', 'first_name', 'last_name', 'email']),
+                'api_version' => $request->attributes->get('api_version'),
+                'timestamp' => now()->toISOString(),
+            ]
         ]);
     });
     
