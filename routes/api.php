@@ -15,10 +15,48 @@ Route::prefix('auth')->group(function () {
     Route::post('/password/reset', [App\Http\Controllers\Api\AuthController::class, 'resetPassword']);
 });
 
-// Test route for authenticated users
-Route::middleware('auth:sanctum')->get('/test', function (Request $request) {
-    return response()->json([
-        'message' => 'Sanctum authentication is working!',
-        'user' => $request->user()->only(['id', 'first_name', 'last_name', 'email'])
-    ]);
+// Public food routes
+Route::prefix('foods')->group(function () {
+    Route::get('/search', [App\Http\Controllers\Api\FoodController::class, 'search']);
+    Route::get('/popular', [App\Http\Controllers\Api\FoodController::class, 'popular']);
+    Route::get('/categories', [App\Http\Controllers\Api\FoodController::class, 'categories']);
+    Route::get('/{id}', [App\Http\Controllers\Api\FoodController::class, 'show']);
+});
+
+// Protected API routes
+Route::middleware('auth:sanctum')->group(function () {
+    
+    // User management
+    Route::prefix('user')->group(function () {
+        Route::get('/profile', [App\Http\Controllers\Api\UserController::class, 'profile']);
+        Route::put('/profile', [App\Http\Controllers\Api\UserController::class, 'updateProfile']);
+        Route::get('/metrics', [App\Http\Controllers\Api\UserController::class, 'getMetrics']);
+        Route::post('/metrics', [App\Http\Controllers\Api\UserController::class, 'storeMetrics']);
+        Route::get('/stats', [App\Http\Controllers\Api\UserController::class, 'getStats']);
+    });
+    
+    // Food management (protected)
+    Route::prefix('foods')->group(function () {
+        Route::post('/', [App\Http\Controllers\Api\FoodController::class, 'store']);
+        Route::put('/{id}', [App\Http\Controllers\Api\FoodController::class, 'update']);
+    });
+    
+    // Food logging
+    Route::prefix('food-logs')->group(function () {
+        Route::post('/', [App\Http\Controllers\Api\FoodLogController::class, 'store']);
+        Route::get('/daily', [App\Http\Controllers\Api\FoodLogController::class, 'daily']);
+        Route::get('/daily/{date}', [App\Http\Controllers\Api\FoodLogController::class, 'dailyByDate']);
+        Route::get('/summary', [App\Http\Controllers\Api\FoodLogController::class, 'nutritionSummary']);
+        Route::put('/{id}', [App\Http\Controllers\Api\FoodLogController::class, 'update']);
+        Route::delete('/{id}', [App\Http\Controllers\Api\FoodLogController::class, 'destroy']);
+    });
+    
+    // Test route for authenticated users
+    Route::get('/test', function (Request $request) {
+        return response()->json([
+            'message' => 'Sanctum authentication is working!',
+            'user' => $request->user()->only(['id', 'first_name', 'last_name', 'email'])
+        ]);
+    });
+    
 });
