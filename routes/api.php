@@ -17,8 +17,13 @@ Route::prefix('v1')->group(function () {
             ->middleware('throttle:5,1');
         Route::post('/login', [App\Http\Controllers\Api\V1\AuthController::class, 'login'])
             ->middleware(['login.rate.limit', 'throttle:10,1']);
-        Route::post('/password/reset', [App\Http\Controllers\Api\V1\AuthController::class, 'resetPassword'])
+        // Password reset routes
+        Route::post('/password/request-reset', [App\Http\Controllers\Api\V1\AuthController::class, 'requestPasswordReset'])
             ->middleware('throttle:3,1');
+        Route::post('/password/reset', [App\Http\Controllers\Api\V1\AuthController::class, 'resetPassword'])
+            ->middleware('throttle:5,1');
+        Route::post('/password/verify-token', [App\Http\Controllers\Api\V1\AuthController::class, 'verifyPasswordResetToken'])
+            ->middleware('throttle:10,1');
         
         // Email verification routes
         Route::get('/email/verify/{id}/{hash}', [App\Http\Controllers\Api\V1\AuthController::class, 'verifyEmail'])
