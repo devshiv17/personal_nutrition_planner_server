@@ -12,10 +12,13 @@ Route::prefix('v1')->group(function () {
 
     // Authentication routes
     Route::prefix('auth')->group(function () {
-        Route::post('/register', [App\Http\Controllers\Api\V1\AuthController::class, 'register']);
-        Route::post('/login', [App\Http\Controllers\Api\V1\AuthController::class, 'login']);
-        Route::post('/logout', [App\Http\Controllers\Api\V1\AuthController::class, 'logout'])->middleware('auth:sanctum');
-        Route::post('/password/reset', [App\Http\Controllers\Api\V1\AuthController::class, 'resetPassword']);
+        // Public authentication routes with rate limiting
+        Route::post('/register', [App\Http\Controllers\Api\V1\AuthController::class, 'register'])
+            ->middleware('throttle:5,1');
+        Route::post('/login', [App\Http\Controllers\Api\V1\AuthController::class, 'login'])
+            ->middleware(['login.rate.limit', 'throttle:10,1']);
+        Route::post('/password/reset', [App\Http\Controllers\Api\V1\AuthController::class, 'resetPassword'])
+            ->middleware('throttle:3,1');
         
         // Email verification routes
         Route::get('/email/verify/{id}/{hash}', [App\Http\Controllers\Api\V1\AuthController::class, 'verifyEmail'])
@@ -25,6 +28,14 @@ Route::prefix('v1')->group(function () {
             ->middleware('throttle:6,1');
         Route::post('/email/check-verification', [App\Http\Controllers\Api\V1\AuthController::class, 'checkEmailVerification'])
             ->middleware('throttle:6,1');
+
+        // Protected authentication routes
+        Route::middleware('auth:sanctum')->group(function () {
+            Route::post('/logout', [App\Http\Controllers\Api\V1\AuthController::class, 'logout']);
+            Route::post('/logout-all', [App\Http\Controllers\Api\V1\AuthController::class, 'logoutAll']);
+            Route::get('/sessions', [App\Http\Controllers\Api\V1\AuthController::class, 'getActiveSessions']);
+            Route::post('/sessions/revoke', [App\Http\Controllers\Api\V1\AuthController::class, 'revokeSession']);
+        });
     });
 
     // Public food routes

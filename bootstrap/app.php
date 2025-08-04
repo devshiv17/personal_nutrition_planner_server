@@ -19,10 +19,11 @@ return Application::configure(basePath: dirname(__DIR__))
             \App\Http\Middleware\ApiLogger::class,
         ]);
 
-        // Rate limiting for API routes
+        // Middleware aliases
         $middleware->alias([
             'api.auth' => \App\Http\Middleware\ApiAuthenticate::class,
             'api.throttle' => \App\Http\Middleware\ApiRateLimit::class,
+            'login.rate.limit' => \App\Http\Middleware\LoginRateLimiter::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
