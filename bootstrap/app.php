@@ -24,6 +24,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'api.auth' => \App\Http\Middleware\ApiAuthenticate::class,
             'api.throttle' => \App\Http\Middleware\ApiRateLimit::class,
             'login.rate.limit' => \App\Http\Middleware\LoginRateLimiter::class,
+            'jwt.auth' => \App\Http\Middleware\JWTAuthMiddleware::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
