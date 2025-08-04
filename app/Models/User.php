@@ -37,6 +37,7 @@ class User extends Authenticatable implements MustVerifyEmail
         'locale',
         'email_notifications',
         'push_notifications',
+        'last_login_ip',
     ];
 
     /**

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Models\LoginAttempt;
 use App\Models\User;
 use App\Notifications\WelcomeNotification;
 use Illuminate\Auth\Events\Verified;
@@ -10,7 +11,10 @@ use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
+use Carbon\Carbon;
 
 class AuthController extends Controller
 {
@@ -128,66 +132,228 @@ class AuthController extends Controller
     }
 
     /**
-     * Login user
+     * Login user with comprehensive security
      */
     public function login(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
-            'email' => 'required|email',
-            'password' => 'required|string',
+            'email' => [
+                'required',
+                'email:rfc,dns',
+                'max:255',
+            ],
+            'password' => [
+                'required',
+                'string',
+                'max:128',
+            ],
+            'remember_me' => 'nullable|boolean',
         ]);
 
         if ($validator->fails()) {
+            $this->logFailedAttempt(
+                $request->input('email', ''),
+                $request->ip(),
+                $request->userAgent(),
+                'validation_failed',
+                $validator->errors()->toArray()
+            );
+
             return response()->json([
                 'message' => 'Validation failed',
                 'errors' => $validator->errors()
             ], 422);
         }
 
-        $user = User::where('email', $request->email)->first();
+        $email = strtolower(trim($request->email));
+        $password = $request->password;
+        $ipAddress = $request->ip();
+        $userAgent = $request->userAgent();
 
-        if (!$user || !Hash::check($request->password, $user->password_hash)) {
+        try {
+            DB::beginTransaction();
+
+            // Check if account is temporarily locked
+            $failedAttempts = LoginAttempt::getRecentFailedAttempts($email, 15);
+            if ($failedAttempts >= 5) {
+                $this->logFailedAttempt($email, $ipAddress, $userAgent, 'account_locked');
+                
+                return response()->json([
+                    'message' => 'Account temporarily locked due to multiple failed login attempts. Please try again in 15 minutes.',
+                    'account_locked' => true,
+                    'retry_after' => 900,
+                ], 423);
+            }
+
+            // Find user
+            $user = User::where('email', $email)->first();
+
+            // Always check password even if user doesn't exist (timing attack prevention)
+            $providedPasswordHash = $user ? $user->password_hash : '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi';
+            $passwordValid = Hash::check($password, $providedPasswordHash);
+
+            if (!$user || !$passwordValid) {
+                $this->logFailedAttempt($email, $ipAddress, $userAgent, 'invalid_credentials');
+                
+                // Add progressive delay based on failed attempts
+                if ($failedAttempts >= 2) {
+                    sleep(min($failedAttempts, 5));
+                }
+
+                DB::commit();
+                return response()->json([
+                    'message' => 'Invalid credentials'
+                ], 401);
+            }
+
+            // Check if account is active
+            if (!$user->is_active) {
+                $this->logFailedAttempt($email, $ipAddress, $userAgent, 'account_deactivated');
+                
+                DB::commit();
+                return response()->json([
+                    'message' => 'Account is deactivated. Please contact support.'
+                ], 403);
+            }
+
+            // Check email verification
+            if (!$user->hasVerifiedEmail()) {
+                $this->logFailedAttempt($email, $ipAddress, $userAgent, 'email_not_verified');
+                
+                DB::commit();
+                return response()->json([
+                    'message' => 'Please verify your email address before logging in.',
+                    'email_verification_required' => true
+                ], 403);
+            }
+
+            // Successful login - log attempt and update user
+            $this->logSuccessfulAttempt($email, $ipAddress, $userAgent);
+            
+            // Update user's last login info
+            $user->update([
+                'last_login_at' => Carbon::now(),
+                'last_login_ip' => $ipAddress,
+            ]);
+
+            // Create token with appropriate expiration
+            $rememberMe = $request->boolean('remember_me', false);
+            $tokenName = 'auth_token_' . Carbon::now()->timestamp;
+            $token = $user->createToken($tokenName);
+            
+            // Set token expiration (24 hours default, 30 days if remember me)
+            if ($rememberMe) {
+                $token->accessToken->expires_at = Carbon::now()->addDays(30);
+            } else {
+                $token->accessToken->expires_at = Carbon::now()->addHours(24);
+            }
+            $token->accessToken->save();
+
+            DB::commit();
+
+            // Log successful login
+            Log::info('User logged in successfully', [
+                'user_id' => $user->id,
+                'email' => $email,
+                'ip_address' => $ipAddress,
+                'user_agent' => $userAgent,
+                'remember_me' => $rememberMe,
+            ]);
+
             return response()->json([
-                'message' => 'Invalid credentials'
-            ], 401);
-        }
+                'message' => 'Login successful',
+                'user' => $user->makeHidden(['password_hash', 'last_login_ip']),
+                'token' => $token->plainTextToken,
+                'token_type' => 'Bearer',
+                'expires_at' => $token->accessToken->expires_at->toISOString(),
+            ]);
 
-        if (!$user->is_active) {
+        } catch (\Exception $e) {
+            DB::rollBack();
+            
+            Log::error('Login error', [
+                'email' => $email,
+                'ip_address' => $ipAddress,
+                'error' => $e->getMessage(),
+            ]);
+
+            $this->logFailedAttempt($email, $ipAddress, $userAgent, 'system_error');
+
             return response()->json([
-                'message' => 'Account is deactivated'
-            ], 403);
+                'message' => 'Login failed due to system error. Please try again.',
+            ], 500);
         }
-
-        if (!$user->hasVerifiedEmail()) {
-            return response()->json([
-                'message' => 'Please verify your email address before logging in.',
-                'email_verification_required' => true
-            ], 403);
-        }
-
-        // Update last login
-        $user->update(['last_login_at' => now()]);
-
-        $token = $user->createToken('auth_token')->plainTextToken;
-
-        return response()->json([
-            'message' => 'Login successful',
-            'user' => $user->makeHidden(['password_hash']),
-            'token' => $token,
-            'token_type' => 'Bearer'
-        ]);
     }
 
     /**
-     * Logout user
+     * Logout user (single session)
      */
     public function logout(Request $request): JsonResponse
     {
-        $request->user()->currentAccessToken()->delete();
+        try {
+            $user = $request->user();
+            $token = $request->user()->currentAccessToken();
+            
+            // Log the logout
+            Log::info('User logged out', [
+                'user_id' => $user->id,
+                'email' => $user->email,
+                'ip_address' => $request->ip(),
+                'token_name' => $token->name,
+            ]);
 
-        return response()->json([
-            'message' => 'Logged out successfully'
-        ]);
+            // Delete the current token
+            $token->delete();
+
+            return response()->json([
+                'message' => 'Logged out successfully'
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Logout error', [
+                'error' => $e->getMessage(),
+                'ip_address' => $request->ip(),
+            ]);
+
+            return response()->json([
+                'message' => 'Logout failed'
+            ], 500);
+        }
+    }
+
+    /**
+     * Logout user from all devices
+     */
+    public function logoutAll(Request $request): JsonResponse
+    {
+        try {
+            $user = $request->user();
+            
+            // Log the logout from all devices
+            Log::info('User logged out from all devices', [
+                'user_id' => $user->id,
+                'email' => $user->email,
+                'ip_address' => $request->ip(),
+                'tokens_count' => $user->tokens()->count(),
+            ]);
+
+            // Delete all tokens for the user
+            $user->tokens()->delete();
+
+            return response()->json([
+                'message' => 'Logged out from all devices successfully'
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Logout all error', [
+                'error' => $e->getMessage(),
+                'ip_address' => $request->ip(),
+            ]);
+
+            return response()->json([
+                'message' => 'Logout from all devices failed'
+            ], 500);
+        }
     }
 
     /**
@@ -350,5 +516,159 @@ class AuthController extends Controller
             'verified' => $user->hasVerifiedEmail(),
             'email_verified_at' => $user->email_verified_at
         ]);
+    }
+
+    /**
+     * Log a failed login attempt
+     */
+    private function logFailedAttempt(
+        string $email,
+        string $ipAddress,
+        ?string $userAgent,
+        string $failureReason,
+        ?array $requestData = null
+    ): void {
+        try {
+            LoginAttempt::logAttempt(
+                $email,
+                $ipAddress,
+                $userAgent,
+                false,
+                $failureReason,
+                $requestData
+            );
+        } catch (\Exception $e) {
+            Log::error('Failed to log login attempt', [
+                'error' => $e->getMessage(),
+                'email' => $email,
+                'ip_address' => $ipAddress,
+            ]);
+        }
+    }
+
+    /**
+     * Log a successful login attempt
+     */
+    private function logSuccessfulAttempt(
+        string $email,
+        string $ipAddress,
+        ?string $userAgent
+    ): void {
+        try {
+            LoginAttempt::logAttempt(
+                $email,
+                $ipAddress,
+                $userAgent,
+                true
+            );
+        } catch (\Exception $e) {
+            Log::error('Failed to log successful login attempt', [
+                'error' => $e->getMessage(),
+                'email' => $email,
+                'ip_address' => $ipAddress,
+            ]);
+        }
+    }
+
+    /**
+     * Get active sessions for current user
+     */
+    public function getActiveSessions(Request $request): JsonResponse
+    {
+        try {
+            $user = $request->user();
+            $currentToken = $request->user()->currentAccessToken();
+            
+            $sessions = $user->tokens()
+                ->whereNull('expires_at')
+                ->orWhere('expires_at', '>', Carbon::now())
+                ->get()
+                ->map(function ($token) use ($currentToken) {
+                    return [
+                        'id' => $token->id,
+                        'name' => $token->name,
+                        'last_used_at' => $token->last_used_at,
+                        'created_at' => $token->created_at,
+                        'expires_at' => $token->expires_at,
+                        'is_current' => $token->id === $currentToken->id,
+                    ];
+                });
+
+            return response()->json([
+                'sessions' => $sessions,
+                'total_sessions' => $sessions->count(),
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Get active sessions error', [
+                'error' => $e->getMessage(),
+                'user_id' => $request->user()?->id,
+            ]);
+
+            return response()->json([
+                'message' => 'Failed to retrieve active sessions'
+            ], 500);
+        }
+    }
+
+    /**
+     * Revoke a specific session
+     */
+    public function revokeSession(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'token_id' => 'required|integer|exists:personal_access_tokens,id',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            $user = $request->user();
+            $tokenId = $request->token_id;
+            
+            // Ensure the token belongs to the authenticated user
+            $token = $user->tokens()->where('id', $tokenId)->first();
+            
+            if (!$token) {
+                return response()->json([
+                    'message' => 'Session not found or access denied'
+                ], 404);
+            }
+
+            // Prevent revoking current session
+            if ($token->id === $request->user()->currentAccessToken()->id) {
+                return response()->json([
+                    'message' => 'Cannot revoke current session. Use logout instead.'
+                ], 400);
+            }
+
+            $token->delete();
+
+            Log::info('Session revoked', [
+                'user_id' => $user->id,
+                'revoked_token_id' => $tokenId,
+                'ip_address' => $request->ip(),
+            ]);
+
+            return response()->json([
+                'message' => 'Session revoked successfully'
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Revoke session error', [
+                'error' => $e->getMessage(),
+                'user_id' => $request->user()?->id,
+                'token_id' => $request->token_id ?? null,
+            ]);
+
+            return response()->json([
+                'message' => 'Failed to revoke session'
+            ], 500);
+        }
     }
 }
