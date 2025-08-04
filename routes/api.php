@@ -34,12 +34,29 @@ Route::prefix('v1')->group(function () {
         Route::post('/email/check-verification', [App\Http\Controllers\Api\V1\AuthController::class, 'checkEmailVerification'])
             ->middleware('throttle:6,1');
 
-        // Protected authentication routes
+        // Protected authentication routes (Sanctum)
         Route::middleware('auth:sanctum')->group(function () {
             Route::post('/logout', [App\Http\Controllers\Api\V1\AuthController::class, 'logout']);
             Route::post('/logout-all', [App\Http\Controllers\Api\V1\AuthController::class, 'logoutAll']);
             Route::get('/sessions', [App\Http\Controllers\Api\V1\AuthController::class, 'getActiveSessions']);
             Route::post('/sessions/revoke', [App\Http\Controllers\Api\V1\AuthController::class, 'revokeSession']);
+        });
+
+        // JWT Authentication routes
+        Route::prefix('jwt')->group(function () {
+            // Public JWT routes
+            Route::post('/login', [App\Http\Controllers\Api\V1\JWTAuthController::class, 'login'])
+                ->middleware(['login.rate.limit', 'throttle:10,1']);
+            Route::post('/refresh', [App\Http\Controllers\Api\V1\JWTAuthController::class, 'refreshToken'])
+                ->middleware('throttle:20,1');
+
+            // Protected JWT routes
+            Route::middleware('jwt.auth')->group(function () {
+                Route::post('/logout', [App\Http\Controllers\Api\V1\JWTAuthController::class, 'logout']);
+                Route::post('/logout-all', [App\Http\Controllers\Api\V1\JWTAuthController::class, 'logoutAll']);
+                Route::get('/tokens', [App\Http\Controllers\Api\V1\JWTAuthController::class, 'getActiveTokens']);
+                Route::post('/tokens/revoke', [App\Http\Controllers\Api\V1\JWTAuthController::class, 'revokeToken']);
+            });
         });
     });
 
