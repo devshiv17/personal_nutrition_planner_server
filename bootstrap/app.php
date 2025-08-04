@@ -12,7 +12,17 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // API Middleware
+        $middleware->api(prepend: [
+            \App\Http\Middleware\ApiCors::class,
+            \App\Http\Middleware\ApiVersion::class,
+            \App\Http\Middleware\ApiLogger::class,
+        ]);
+
+        // Middleware aliases
         $middleware->alias([
+            'api.auth' => \App\Http\Middleware\ApiAuthenticate::class,
+            'api.throttle' => \App\Http\Middleware\ApiRateLimit::class,
             'login.rate.limit' => \App\Http\Middleware\LoginRateLimiter::class,
         ]);
     })
