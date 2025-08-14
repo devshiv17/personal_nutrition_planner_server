@@ -34,8 +34,8 @@ Route::prefix('v1')->group(function () {
         Route::post('/email/check-verification', [App\Http\Controllers\Api\V1\AuthController::class, 'checkEmailVerification'])
             ->middleware('throttle:6,1');
 
-        // Protected authentication routes (Sanctum)
-        Route::middleware('auth:sanctum')->group(function () {
+        // Protected authentication routes (Sanctum) with session security
+        Route::middleware(['auth:sanctum', 'session.security'])->group(function () {
             Route::post('/logout', [App\Http\Controllers\Api\V1\AuthController::class, 'logout']);
             Route::post('/logout-all', [App\Http\Controllers\Api\V1\AuthController::class, 'logoutAll']);
             Route::get('/sessions', [App\Http\Controllers\Api\V1\AuthController::class, 'getActiveSessions']);
@@ -68,8 +68,8 @@ Route::prefix('v1')->group(function () {
         Route::get('/{id}', [App\Http\Controllers\Api\V1\FoodController::class, 'show']);
     });
 
-    // Protected API routes
-    Route::middleware('auth:sanctum')->group(function () {
+    // Protected API routes with session security
+    Route::middleware(['auth:sanctum', 'session.security'])->group(function () {
         
         // User management
         Route::prefix('user')->group(function () {

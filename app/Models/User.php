@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Notifications\VerifyEmailNotification;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
@@ -38,6 +39,7 @@ class User extends Authenticatable implements MustVerifyEmail
         'email_notifications',
         'push_notifications',
         'last_login_ip',
+        'last_activity_at',
     ];
 
     /**
@@ -71,10 +73,27 @@ class User extends Authenticatable implements MustVerifyEmail
             'push_notifications' => 'boolean',
             'profile_completed' => 'boolean',
             'last_login_at' => 'datetime',
+            'last_activity_at' => 'datetime',
             'created_at' => 'datetime',
             'updated_at' => 'datetime',
             'deleted_at' => 'datetime',
         ];
+    }
+
+    /**
+     * Get the user's sessions.
+     */
+    public function sessions(): HasMany
+    {
+        return $this->hasMany(UserSession::class);
+    }
+
+    /**
+     * Get the user's active sessions.
+     */
+    public function activeSessions(): HasMany
+    {
+        return $this->sessions()->active();
     }
 
     /**
