@@ -12,6 +12,9 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // Global middleware
+        $middleware->append(\App\Http\Middleware\SecurityHeaders::class);
+
         // API Middleware
         $middleware->api(prepend: [
             \App\Http\Middleware\ApiCors::class,
@@ -25,6 +28,8 @@ return Application::configure(basePath: dirname(__DIR__))
             'api.throttle' => \App\Http\Middleware\ApiRateLimit::class,
             'login.rate.limit' => \App\Http\Middleware\LoginRateLimiter::class,
             'jwt.auth' => \App\Http\Middleware\JWTAuthMiddleware::class,
+            'security.headers' => \App\Http\Middleware\SecurityHeaders::class,
+            'session.security' => \App\Http\Middleware\SessionSecurity::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

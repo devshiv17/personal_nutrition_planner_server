@@ -98,6 +98,7 @@ class AuthController extends Controller
             $user = User::create([
                 'first_name' => trim($request->first_name),
                 'last_name' => trim($request->last_name),
+                'name' => trim($request->first_name) . ' ' . trim($request->last_name),
                 'email' => strtolower(trim($request->email)),
                 'password_hash' => Hash::make($request->password),
                 'date_of_birth' => $request->date_of_birth,
@@ -107,9 +108,9 @@ class AuthController extends Controller
                 'activity_level' => $request->activity_level ?? 'sedentary',
                 'primary_goal' => $request->primary_goal ?? 'maintenance',
                 'dietary_preference' => $request->dietary_preference,
-                'is_active' => true,
                 'email_notifications' => true,
                 'push_notifications' => false,
+                'is_active' => true,
             ]);
 
             // Calculate BMR and TDEE if we have the required data
