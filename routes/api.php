@@ -63,9 +63,21 @@ Route::prefix('v1')->group(function () {
     // Public food routes
     Route::prefix('foods')->group(function () {
         Route::get('/search', [App\Http\Controllers\Api\V1\FoodController::class, 'search']);
+        Route::get('/autocomplete', [App\Http\Controllers\Api\V1\FoodController::class, 'autocomplete']);
         Route::get('/popular', [App\Http\Controllers\Api\V1\FoodController::class, 'popular']);
         Route::get('/categories', [App\Http\Controllers\Api\V1\FoodController::class, 'categories']);
+        Route::get('/barcode/{barcode}', [App\Http\Controllers\Api\V1\FoodController::class, 'lookupBarcode']);
         Route::get('/{id}', [App\Http\Controllers\Api\V1\FoodController::class, 'show']);
+        Route::get('/{id}/nutrition', [App\Http\Controllers\Api\V1\FoodController::class, 'getNutritionDetails']);
+    });
+
+    // Public recipe routes
+    Route::prefix('recipes')->group(function () {
+        Route::get('/', [App\Http\Controllers\Api\V1\RecipeController::class, 'index']);
+        Route::get('/popular', [App\Http\Controllers\Api\V1\RecipeController::class, 'popular']);
+        Route::get('/collections', [App\Http\Controllers\Api\V1\RecipeController::class, 'collections']);
+        Route::get('/{id}', [App\Http\Controllers\Api\V1\RecipeController::class, 'show']);
+        Route::get('/{id}/scale', [App\Http\Controllers\Api\V1\RecipeController::class, 'scale']);
     });
 
     // Protected API routes with session security
@@ -84,6 +96,41 @@ Route::prefix('v1')->group(function () {
         Route::prefix('foods')->group(function () {
             Route::post('/', [App\Http\Controllers\Api\V1\FoodController::class, 'store']);
             Route::put('/{id}', [App\Http\Controllers\Api\V1\FoodController::class, 'update']);
+            Route::post('/import', [App\Http\Controllers\Api\V1\FoodController::class, 'importExternal']);
+            Route::post('/compare', [App\Http\Controllers\Api\V1\FoodController::class, 'compare']);
+            
+            // Food favorites
+            Route::get('/favorites', [App\Http\Controllers\Api\V1\FoodController::class, 'favorites']);
+            Route::post('/{id}/favorite', [App\Http\Controllers\Api\V1\FoodController::class, 'addToFavorites']);
+            Route::delete('/{id}/favorite', [App\Http\Controllers\Api\V1\FoodController::class, 'removeFromFavorites']);
+            Route::get('/recent', [App\Http\Controllers\Api\V1\FoodController::class, 'recent']);
+        });
+
+        // Recipe management (protected)
+        Route::prefix('recipes')->group(function () {
+            Route::post('/', [App\Http\Controllers\Api\V1\RecipeController::class, 'store']);
+            Route::put('/{id}', [App\Http\Controllers\Api\V1\RecipeController::class, 'update']);
+            Route::delete('/{id}', [App\Http\Controllers\Api\V1\RecipeController::class, 'destroy']);
+            Route::post('/{id}/duplicate', [App\Http\Controllers\Api\V1\RecipeController::class, 'duplicate']);
+            
+            // Recipe ratings
+            Route::post('/{id}/rating', [App\Http\Controllers\Api\V1\RecipeController::class, 'addRating']);
+            
+            // Recipe favorites
+            Route::get('/favorites', [App\Http\Controllers\Api\V1\RecipeController::class, 'favorites']);
+            Route::post('/{id}/favorite', [App\Http\Controllers\Api\V1\RecipeController::class, 'addToFavorites']);
+            Route::delete('/{id}/favorite', [App\Http\Controllers\Api\V1\RecipeController::class, 'removeFromFavorites']);
+            
+            // Recipe collections
+            Route::post('/collections', [App\Http\Controllers\Api\V1\RecipeController::class, 'createCollection']);
+            Route::post('/{id}/collections', [App\Http\Controllers\Api\V1\RecipeController::class, 'addToCollection']);
+            
+            // Recipe image management
+            Route::get('/{id}/images', [App\Http\Controllers\Api\V1\RecipeController::class, 'getImages']);
+            Route::post('/{id}/images', [App\Http\Controllers\Api\V1\RecipeController::class, 'uploadImages']);
+            Route::delete('/{id}/images', [App\Http\Controllers\Api\V1\RecipeController::class, 'deleteImage']);
+            Route::put('/{id}/images/metadata', [App\Http\Controllers\Api\V1\RecipeController::class, 'updateImageMetadata']);
+            Route::put('/{id}/images/reorder', [App\Http\Controllers\Api\V1\RecipeController::class, 'reorderImages']);
         });
         
         // Food logging
@@ -94,6 +141,71 @@ Route::prefix('v1')->group(function () {
             Route::get('/summary', [App\Http\Controllers\Api\V1\FoodLogController::class, 'nutritionSummary']);
             Route::put('/{id}', [App\Http\Controllers\Api\V1\FoodLogController::class, 'update']);
             Route::delete('/{id}', [App\Http\Controllers\Api\V1\FoodLogController::class, 'destroy']);
+        });
+
+        // Health metrics
+        Route::prefix('health-metrics')->group(function () {
+            Route::get('/', [App\Http\Controllers\Api\V1\HealthMetricsController::class, 'index']);
+            Route::post('/', [App\Http\Controllers\Api\V1\HealthMetricsController::class, 'store']);
+            Route::get('/types', [App\Http\Controllers\Api\V1\HealthMetricsController::class, 'types']);
+            Route::get('/dashboard', [App\Http\Controllers\Api\V1\HealthMetricsController::class, 'dashboard']);
+            Route::get('/history', [App\Http\Controllers\Api\V1\HealthMetricsController::class, 'history']);
+            
+            // Outlier detection routes
+            Route::get('/outliers/analyze', [App\Http\Controllers\Api\V1\HealthMetricsController::class, 'analyzeOutliers']);
+            Route::get('/outliers/methods', [App\Http\Controllers\Api\V1\HealthMetricsController::class, 'outlierMethods']);
+            Route::post('/outliers/validate', [App\Http\Controllers\Api\V1\HealthMetricsController::class, 'validateMetric']);
+            
+            Route::get('/{id}', [App\Http\Controllers\Api\V1\HealthMetricsController::class, 'show']);
+            Route::put('/{id}', [App\Http\Controllers\Api\V1\HealthMetricsController::class, 'update']);
+            Route::delete('/{id}', [App\Http\Controllers\Api\V1\HealthMetricsController::class, 'destroy']);
+        });
+
+        // Goals management
+        Route::prefix('goals')->group(function () {
+            Route::get('/', [App\Http\Controllers\Api\V1\GoalsController::class, 'index']);
+            Route::post('/', [App\Http\Controllers\Api\V1\GoalsController::class, 'store']);
+            Route::get('/types', [App\Http\Controllers\Api\V1\GoalsController::class, 'types']);
+            Route::get('/progress', [App\Http\Controllers\Api\V1\GoalsController::class, 'progress']);
+            Route::get('/{id}', [App\Http\Controllers\Api\V1\GoalsController::class, 'show']);
+            Route::put('/{id}', [App\Http\Controllers\Api\V1\GoalsController::class, 'update']);
+            Route::delete('/{id}', [App\Http\Controllers\Api\V1\GoalsController::class, 'destroy']);
+            Route::post('/{id}/update-progress', [App\Http\Controllers\Api\V1\GoalsController::class, 'updateProgress']);
+        });
+
+        // Meal planning
+        Route::prefix('meal-plans')->group(function () {
+            Route::get('/', [App\Http\Controllers\Api\V1\MealPlanController::class, 'index']);
+            Route::post('/generate', [App\Http\Controllers\Api\V1\MealPlanController::class, 'generate']);
+            Route::get('/{id}', [App\Http\Controllers\Api\V1\MealPlanController::class, 'show']);
+            Route::post('/{id}/regenerate', [App\Http\Controllers\Api\V1\MealPlanController::class, 'regenerate']);
+            Route::get('/{id}/shopping-list', [App\Http\Controllers\Api\V1\MealPlanController::class, 'getShoppingList']);
+            Route::get('/{id}/meal-prep', [App\Http\Controllers\Api\V1\MealPlanController::class, 'getMealPrepSuggestions']);
+            Route::get('/{id}/analytics', [App\Http\Controllers\Api\V1\MealPlanController::class, 'getAnalytics']);
+            
+            // Meal management
+            Route::get('/meals/{mealId}/alternatives', [App\Http\Controllers\Api\V1\MealPlanController::class, 'getAlternatives']);
+            Route::post('/meals/{mealId}/substitute', [App\Http\Controllers\Api\V1\MealPlanController::class, 'substituteMeal']);
+            Route::post('/meals/{mealId}/complete', [App\Http\Controllers\Api\V1\MealPlanController::class, 'completeMeal']);
+            Route::post('/meals/{mealId}/skip', [App\Http\Controllers\Api\V1\MealPlanController::class, 'skipMeal']);
+        });
+
+        // Dietary preferences
+        Route::prefix('dietary-preferences')->group(function () {
+            Route::get('/', function (Request $request) {
+                $user = $request->user();
+                $preferences = $user->dietaryPreferences;
+                return response()->json(['data' => $preferences]);
+            });
+            Route::post('/', [App\Http\Controllers\Api\V1\MealPlanController::class, 'updateDietaryPreferences']);
+        });
+
+        // Profile completion
+        Route::prefix('profile')->group(function () {
+            Route::get('/completion', [App\Http\Controllers\Api\V1\ProfileController::class, 'completion']);
+            Route::get('/progress', [App\Http\Controllers\Api\V1\ProfileController::class, 'progress']);
+            Route::get('/sections', [App\Http\Controllers\Api\V1\ProfileController::class, 'sections']);
+            Route::post('/sections/complete', [App\Http\Controllers\Api\V1\ProfileController::class, 'markSectionComplete']);
         });
         
         // Test route for authenticated users
