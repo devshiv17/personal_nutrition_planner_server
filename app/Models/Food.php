@@ -13,25 +13,30 @@ class Food extends Model
     protected $fillable = [
         'external_id',
         'name',
-        'brand',
+        'brand_name',
+        'description',
         'category',
         'subcategory',
         'calories_per_100g',
         'protein_per_100g',
-        'carbs_per_100g',
+        'carbohydrates_per_100g',
         'fat_per_100g',
         'fiber_per_100g',
         'sugar_per_100g',
         'sodium_per_100g',
         'additional_nutrients',
-        'common_serving_size',
-        'common_serving_unit',
+        'serving_size',
+        'serving_unit',
         'barcode',
         'image_url',
-        'data_source',
+        'source',
         'is_verified',
         'verification_level',
         'created_by',
+        'usage_count',
+        'last_updated',
+        'ingredients',
+        'allergens'
     ];
 
     protected function casts(): array
@@ -39,14 +44,18 @@ class Food extends Model
         return [
             'calories_per_100g' => 'decimal:2',
             'protein_per_100g' => 'decimal:2',
-            'carbs_per_100g' => 'decimal:2',
+            'carbohydrates_per_100g' => 'decimal:2',
             'fat_per_100g' => 'decimal:2',
             'fiber_per_100g' => 'decimal:2',
             'sugar_per_100g' => 'decimal:2',
             'sodium_per_100g' => 'decimal:2',
-            'common_serving_size' => 'decimal:2',
+            'serving_size' => 'decimal:2',
             'additional_nutrients' => 'json',
+            'ingredients' => 'array',
+            'allergens' => 'array',
             'is_verified' => 'boolean',
+            'usage_count' => 'integer',
+            'last_updated' => 'datetime',
             'created_at' => 'datetime',
             'updated_at' => 'datetime',
         ];
@@ -58,6 +67,23 @@ class Food extends Model
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    /**
+     * Get food logs for this food
+     */
+    public function foodLogs()
+    {
+        return $this->hasMany(FoodLog::class);
+    }
+
+    /**
+     * Get users who have favorited this food
+     */
+    public function favoritedByUsers()
+    {
+        return $this->belongsToMany(User::class, 'user_favorite_foods')
+                    ->withTimestamps();
     }
 
     /**
@@ -136,7 +162,109 @@ class Food extends Model
         $unit = strtolower($this->common_serving_unit);
         $conversionFactor = $conversions[$unit] ?? 1;
 
-        return $this->common_serving_size * $conversionFactor;
+        return $this->serving_size * $conversionFactor;
+    }
+
+    /**
+     * Get macro distribution
+     */
+    public function getMacroDistribution(): array
+    {
+        $proteinCals = $this->protein_per_100g * 4;
+        $carbsCals = $this->carbohydrates_per_100g * 4;
+        $fatCals = $this->fat_per_100g * 9;
+        $totalCals = $this->calories_per_100g ?: ($proteinCals + $carbsCals + $fatCals);
+        
+        if ($totalCals == 0) {
+            return ['protein' => 0, 'carbs' => 0, 'fat' => 0];
+        }
+        
+        return [
+            'protein' => round(($proteinCals / $totalCals) * 100, 1),
+            'carbs' => round(($carbsCals / $totalCals) * 100, 1),
+            'fat' => round(($fatCals / $totalCals) * 100, 1)
+        ];
+    }
+
+    /**
+     * Increment usage count
+     */
+    public function incrementUsage()
+    {
+        $this->increment('usage_count');
+        $this->touch();
+    }
+
+    /**
+     * Check if food contains allergen
+     */
+    public function containsAllergen(string $allergen): bool
+    {
+        return in_array(strtolower($allergen), array_map('strtolower', $this->allergens ?? []));
+    }
+
+    /**
+     * Search scope with multiple filters
+     */
+    public function scopeAdvancedSearch($query, array $filters)
+    {
+        if (!empty($filters['search'])) {
+            $query->where(function($q) use ($filters) {
+                $q->where('name', 'ILIKE', '%' . $filters['search'] . '%')
+                  ->orWhere('brand_name', 'ILIKE', '%' . $filters['search'] . '%')
+                  ->orWhere('description', 'ILIKE', '%' . $filters['search'] . '%');
+            });
+        }
+        
+        if (!empty($filters['category'])) {
+            $query->where('category', $filters['category']);
+        }
+        
+        if (!empty($filters['brand'])) {
+            $query->where('brand_name', 'ILIKE', '%' . $filters['brand'] . '%');
+        }
+        
+        if (!empty($filters['verified_only'])) {
+            $query->where('is_verified', true);
+        }
+        
+        if (!empty($filters['max_calories'])) {
+            $query->where('calories_per_100g', '<=', $filters['max_calories']);
+        }
+        
+        if (!empty($filters['min_protein'])) {
+            $query->where('protein_per_100g', '>=', $filters['min_protein']);
+        }
+        
+        if (!empty($filters['max_carbs'])) {
+            $query->where('carbohydrates_per_100g', '<=', $filters['max_carbs']);
+        }
+        
+        if (!empty($filters['max_fat'])) {
+            $query->where('fat_per_100g', '<=', $filters['max_fat']);
+        }
+        
+        if (!empty($filters['allergen_free'])) {
+            foreach ($filters['allergen_free'] as $allergen) {
+                $query->whereNotJsonContains('allergens', $allergen);
+            }
+        }
+        
+        return $query;
+    }
+
+    /**
+     * Get recent foods for a user
+     */
+    public function scopeRecentForUser($query, int $userId, int $days = 30)
+    {
+        return $query->whereHas('foodLogs', function($q) use ($userId, $days) {
+            $q->where('user_id', $userId)
+              ->where('logged_at', '>=', now()->subDays($days));
+        })->withCount(['foodLogs' => function($q) use ($userId, $days) {
+            $q->where('user_id', $userId)
+              ->where('logged_at', '>=', now()->subDays($days));
+        }])->orderBy('food_logs_count', 'desc');
     }
 
     /**
@@ -150,7 +278,7 @@ class Food extends Model
 
         switch ($dietaryPreference) {
             case 'keto':
-                return $this->carbs_per_100g <= 5; // Low carb
+                return $this->carbohydrates_per_100g <= 5; // Low carb
             case 'vegan':
                 // Would need ingredient analysis or tags
                 return !str_contains(strtolower($this->name), 'meat') &&
